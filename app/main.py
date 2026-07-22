@@ -2,7 +2,9 @@
 
 from fastapi import FastAPI
 
-app = FastAPI(title="AOS API")
+from app.core.lifespan import lifespan
+
+app = FastAPI(title="AOS API", lifespan=lifespan)
 
 
 @app.get("/")
