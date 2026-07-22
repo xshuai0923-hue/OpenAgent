@@ -1,0 +1,9 @@
+.git
+.gitignore
+.pre-commit-config.yaml
+.pytest_cache
+.ruff_cache
+.venv
+__pycache__
+*.py[cod]
+tests
