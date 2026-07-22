@@ -91,3 +91,19 @@ Modified Files
 Validation
 Risks
 Next Step
+
+## Git Policy
+
+Codex must never execute git push unless explicitly requested.
+
+Codex may:
+
+- inspect git status
+- inspect git diff
+- suggest commit messages
+
+The user is responsible for:
+
+- git add
+- git commit
+- git push
