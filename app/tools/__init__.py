@@ -2,6 +2,7 @@
 
 from app.tools.base import BaseTool
 from app.tools.exceptions import ToolError
+from app.tools.function import FunctionTool
 from app.tools.models import ToolCall, ToolDefinition, ToolParameter, ToolResult
 from app.tools.registry import (
     ToolAlreadyRegisteredError,
@@ -12,6 +13,7 @@ from app.tools.registry import (
 
 __all__ = [
     "BaseTool",
+    "FunctionTool",
     "ToolCall",
     "ToolDefinition",
     "ToolError",
