@@ -6,10 +6,15 @@ from app.chat.models import ChatRequest
 from app.prompts.builder import PromptBuilder, PromptBuilderError
 from app.providers.base import BaseProvider
 from app.providers.exceptions import ProviderError
-from app.providers.models import GenerationRequest, GenerationResponse
+from app.providers.models import (
+    GenerationRequest,
+    GenerationResponse,
+    Message,
+)
 from app.rag.context import RagContext
 from app.rag.exceptions import RagServiceError
 from app.rag.service import RagService
+from app.tools.models import ToolDefinition
 
 
 class ChatService:
@@ -26,8 +31,8 @@ class ChatService:
         self._prompt_builder = prompt_builder
         self._rag_service = rag_service
 
-    async def chat(self, request: ChatRequest) -> GenerationResponse:
-        """Complete one chat turn and return the provider response unchanged."""
+    async def build_messages(self, request: ChatRequest) -> list[Message]:
+        """Build provider messages while preserving prompt and RAG behavior."""
         context: RagContext | None = None
         if request.retrieval_request is not None and self._rag_service is not None:
             try:
@@ -43,14 +48,28 @@ class ChatService:
         )
 
         try:
-            messages = self._prompt_builder.build(
+            return self._prompt_builder.build(
                 user_prompt=user_prompt,
                 system_prompt=request.system_prompt,
             )
         except PromptBuilderError as error:
             raise ChatServiceError("Prompt construction failed") from error
 
+    async def chat_messages(
+        self,
+        messages: list[Message],
+        *,
+        tools: tuple[ToolDefinition, ...] = (),
+    ) -> GenerationResponse:
+        """Generate from an existing ordered provider message history."""
         try:
-            return await self._provider.generate(GenerationRequest(messages=messages))
+            return await self._provider.generate(
+                GenerationRequest(messages=messages, tools=tools)
+            )
         except ProviderError as error:
             raise ChatServiceError("Chat provider failed") from error
+
+    async def chat(self, request: ChatRequest) -> GenerationResponse:
+        """Complete one chat turn and return the provider response unchanged."""
+        messages = await self.build_messages(request)
+        return await self.chat_messages(messages, tools=request.tools)

@@ -5,8 +5,9 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from app.providers.exceptions import ProviderError
+from app.tools.models import ToolCall, ToolDefinition
 
-MessageRole = Literal["system", "user", "assistant"]
+MessageRole = Literal["system", "user", "assistant", "tool"]
 
 
 @dataclass(frozen=True)
@@ -15,13 +16,26 @@ class Message:
 
     role: MessageRole
     content: str
+    tool_call_id: str = ""
+    tool_calls: tuple[ToolCall, ...] = ()
 
     def __post_init__(self) -> None:
         """Reject unsupported roles and empty message content."""
-        if self.role not in {"system", "user", "assistant"}:
+        if self.role not in {"system", "user", "assistant", "tool"}:
             raise ProviderError(f"Unsupported message role: {self.role!r}")
-        if not self.content.strip():
+        if self.tool_calls is None:
+            raise ProviderError("Message tool calls must not be None")
+        object.__setattr__(self, "tool_calls", tuple(self.tool_calls))
+        if not self.content.strip() and not (
+            self.role == "assistant" and self.tool_calls
+        ):
             raise ProviderError("Message content must not be empty")
+        if self.role != "assistant" and self.tool_calls:
+            raise ProviderError("Only assistant messages may include tool calls")
+        if self.role == "tool" and not self.tool_call_id.strip():
+            raise ProviderError("Tool message requires a tool call ID")
+        if self.role != "tool" and self.tool_call_id:
+            raise ProviderError("Only tool messages may include a tool call ID")
 
 
 @dataclass(frozen=True)
@@ -58,11 +72,15 @@ class GenerationRequest:
     messages: list[Message]
     temperature: float = 0.7
     max_tokens: int = 1024
+    tools: tuple[ToolDefinition, ...] = ()
 
     def __post_init__(self) -> None:
         """Require at least one conversation message."""
         if not self.messages:
             raise ProviderError("Generation request requires at least one message")
+        if self.tools is None:
+            raise ProviderError("Generation request tools must not be None")
+        object.__setattr__(self, "tools", tuple(self.tools))
 
 
 @dataclass(frozen=True)
@@ -70,3 +88,10 @@ class GenerationResponse:
     """Contain provider-independent generated text."""
 
     text: str
+    tool_calls: tuple[ToolCall, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Isolate the tool call tuple and reject absent collections."""
+        if self.tool_calls is None:
+            raise ProviderError("Generation response tool calls must not be None")
+        object.__setattr__(self, "tool_calls", tuple(self.tool_calls))

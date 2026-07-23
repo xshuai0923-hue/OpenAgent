@@ -11,6 +11,7 @@ from app.providers.models import (
     Message,
     ProviderConfig,
 )
+from app.tools import ToolCall, ToolDefinition
 
 
 def test_message_can_be_created() -> None:
@@ -20,9 +21,51 @@ def test_message_can_be_created() -> None:
     assert message.content == "Follow instructions"
 
 
+@pytest.mark.parametrize("role", ["system", "user", "assistant", "tool"])
+def test_message_supports_conversation_roles(role: str) -> None:
+    message = Message(
+        role=role,  # type: ignore[arg-type]
+        content="content",
+        tool_call_id="call_123" if role == "tool" else "",
+    )
+
+    assert message.role == role
+
+
+def test_message_validates_tool_call_id_by_role() -> None:
+    assert Message(role="user", content="question").tool_call_id == ""
+    tool_message = Message(
+        role="tool",
+        content="result",
+        tool_call_id="call_123",
+    )
+    assert tool_message.tool_call_id == "call_123"
+
+    with pytest.raises(ProviderError, match="requires a tool call ID"):
+        Message(role="tool", content="result")
+    with pytest.raises(ProviderError, match="Only tool messages"):
+        Message(role="assistant", content="answer", tool_call_id="call_123")
+
+
+def test_assistant_message_supports_tool_calls_and_empty_content() -> None:
+    call = ToolCall(tool_name="search", arguments={}, call_id="call_123")
+    calls = [call]
+
+    message = Message(
+        role="assistant",
+        content="",
+        tool_calls=calls,  # type: ignore[arg-type]
+    )
+    calls.clear()
+
+    assert message.tool_calls == (call,)
+    with pytest.raises(ProviderError, match="Only assistant"):
+        Message(role="user", content="question", tool_calls=(call,))
+
+
 def test_message_rejects_invalid_role() -> None:
     with pytest.raises(ProviderError, match="Unsupported message role"):
-        Message(role="tool", content="result")  # type: ignore[arg-type]
+        Message(role="developer", content="result")  # type: ignore[arg-type]
 
 
 def test_message_rejects_empty_content() -> None:
@@ -77,6 +120,7 @@ def test_generation_request_defaults() -> None:
     assert request.messages == messages
     assert request.temperature == 0.7
     assert request.max_tokens == 1024
+    assert request.tools == ()
 
 
 def test_generation_request_rejects_empty_messages() -> None:
@@ -94,6 +138,31 @@ def test_generation_models_are_frozen() -> None:
         response.text = "changed"
 
 
+def test_generation_models_support_immutable_tool_contracts() -> None:
+    definition = ToolDefinition(name="search", description="Search documents")
+    definitions = [definition]
+    request = GenerationRequest(
+        messages=[Message(role="user", content="hello")],
+        tools=definitions,  # type: ignore[arg-type]
+    )
+    call = ToolCall(tool_name="search", arguments={"query": "hello"})
+    calls = [call]
+    response = GenerationResponse(
+        text="using search",
+        tool_calls=calls,  # type: ignore[arg-type]
+    )
+
+    definitions.clear()
+    calls.clear()
+
+    assert request.tools == (definition,)
+    assert response.tool_calls == (call,)
+    with pytest.raises(FrozenInstanceError):
+        request.tools = ()
+    with pytest.raises(FrozenInstanceError):
+        response.tool_calls = ()
+
+
 def test_generation_model_field_types() -> None:
     request_types = {field.name: field.type for field in fields(GenerationRequest)}
     response_types = {field.name: field.type for field in fields(GenerationResponse)}
@@ -102,5 +171,9 @@ def test_generation_model_field_types() -> None:
         "messages": list[Message],
         "temperature": float,
         "max_tokens": int,
+        "tools": tuple[ToolDefinition, ...],
     }
-    assert response_types == {"text": str}
+    assert response_types == {
+        "text": str,
+        "tool_calls": tuple[ToolCall, ...],
+    }

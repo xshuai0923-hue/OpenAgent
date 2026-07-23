@@ -46,6 +46,7 @@ class ToolCall:
 
     tool_name: str
     arguments: Mapping[str, object]
+    call_id: str = ""
 
     def __post_init__(self) -> None:
         """Validate the tool name and defensively copy its arguments."""

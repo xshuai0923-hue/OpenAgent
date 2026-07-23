@@ -107,3 +107,136 @@ The user is responsible for:
 - git add
 - git commit
 - git push
+
+## Architecture Conflict
+
+If implementation conflicts with existing public contracts:
+
+1. Stop implementation immediately.
+
+2. Produce an Architecture Report.
+
+3. Do NOT modify existing stable APIs.
+
+4. Wait for an Architecture Decision (ADR).
+
+Only continue after the ADR is approved.
+
+# Architecture Decision Record (ADR) Workflow
+
+## Purpose
+
+All architecture decisions that affect public contracts, module boundaries,
+dependency direction, data models, APIs, or execution flow must be recorded as
+repository files before implementation.
+
+Chat discussion, temporary notes, or external instructions are not considered
+the source of truth.
+
+## ADR Storage
+
+All ADR documents must be stored under:
+
+`docs/adr/`
+
+Naming convention:
+
+`ADR-XXXX-short-description.md`
+
+Example:
+
+`docs/adr/ADR-0010-agent-state-machine.md`
+
+## ADR Requirements
+
+An ADR must define:
+
+- Status
+- Context
+- Decision
+- Module ownership
+- Dependency direction
+- Public contracts
+- Data models
+- Function signatures
+- Default values
+- Validation rules
+- Allowed changes
+- Forbidden changes
+- Testing requirements
+- Risks
+
+## ADR Implementation Rules
+
+Before implementing architecture-related changes:
+
+1. Locate referenced ADR files in repository.
+2. Read complete ADR content.
+3. Verify required contracts exist.
+4. Confirm allowed and forbidden changes.
+
+If ADR file does not exist:
+
+- Stop implementation.
+- Report missing ADR.
+- Do not infer architecture from chat history.
+- Do not create public APIs by guessing.
+
+## Never Guess Rule
+
+Never guess:
+
+- public APIs
+- class fields
+- dependency direction
+- module ownership
+- migration strategy
+- state transitions
+- error handling behavior
+
+When information is missing:
+
+1. Stop implementation.
+2. Create Architecture Report.
+3. Describe conflict.
+4. Request ADR clarification.
+
+## ADR Source of Truth
+
+Priority order:
+
+1. Repository ADR files (`docs/adr/*.md`)
+2. Existing source code contracts
+3. Existing tests
+4. Task specification
+
+Chat messages are not considered authoritative architecture documents unless
+converted into repository ADR files.
+
+## ADR Amendment Rules
+
+When implementation discovers architecture conflicts:
+
+1. Stop coding.
+2. Create Architecture Report.
+3. Propose ADR Amendment.
+4. Update ADR document.
+5. Continue implementation only after ADR is updated.
+
+## Architecture Review Gate
+
+Architecture changes must follow:
+
+```text
+ADR exists
+    ↓
+ADR reviewed
+    ↓
+Implementation
+    ↓
+Tests
+    ↓
+Architecture Review
+```
+
+No architecture implementation may bypass this sequence.

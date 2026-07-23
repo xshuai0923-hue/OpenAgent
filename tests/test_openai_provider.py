@@ -8,11 +8,13 @@ import pytest
 from app.providers import (
     BaseProvider,
     GenerationRequest,
+    GenerationResponse,
     OpenAIProvider,
     ProviderConfig,
     ProviderError,
 )
 from app.providers.models import Message
+from app.tools import ToolCall, ToolDefinition
 
 
 @pytest.fixture
@@ -77,7 +79,179 @@ async def test_generate_constructs_request_and_parses_response(
         await provider.close()
 
     assert response.text == "world"
+    assert response.tool_calls == ()
     assert isinstance(provider, BaseProvider)
+
+
+@pytest.mark.anyio
+async def test_generate_maps_tools_and_parses_tool_calls(
+    provider_config: ProviderConfig,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.read() == (
+            b'{"model":"test-model","messages":[{"role":"user",'
+            b'"content":"hello"}],"temperature":0.7,"max_tokens":1024,'
+            b'"tools":[{"type":"function","function":{"name":"search",'
+            b'"description":"Search documents","parameters":{}}}]}'
+        )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "I will search",
+                            "tool_calls": [
+                                {
+                                    "id": "call_123",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "search",
+                                        "arguments": '{"query":"hello"}',
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    provider = create_provider(provider_config, handler)
+    try:
+        response = await provider.generate(
+            GenerationRequest(
+                messages=[Message(role="user", content="hello")],
+                tools=(ToolDefinition(name="search", description="Search documents"),),
+            )
+        )
+    finally:
+        await provider.close()
+
+    assert response == GenerationResponse(
+        text="I will search",
+        tool_calls=(
+            ToolCall(
+                tool_name="search",
+                arguments={"query": "hello"},
+                call_id="call_123",
+            ),
+        ),
+    )
+
+
+@pytest.mark.anyio
+async def test_generate_maps_tool_result_message(
+    provider_config: ProviderConfig,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.read() == (
+            b'{"model":"test-model","messages":[{"role":"tool",'
+            b'"content":"result","tool_call_id":"call_123"}],'
+            b'"temperature":0.7,"max_tokens":1024}'
+        )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "done"}}]},
+        )
+
+    provider = create_provider(provider_config, handler)
+    try:
+        response = await provider.generate(
+            GenerationRequest(
+                messages=[
+                    Message(
+                        role="tool",
+                        content="result",
+                        tool_call_id="call_123",
+                    )
+                ]
+            )
+        )
+    finally:
+        await provider.close()
+
+    assert response == GenerationResponse(text="done")
+
+
+@pytest.mark.anyio
+async def test_generate_maps_assistant_tool_calls_and_tool_message(
+    provider_config: ProviderConfig,
+) -> None:
+    call = ToolCall(
+        tool_name="search",
+        arguments={"query": "hello"},
+        call_id="call_123",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.read() == (
+            b'{"model":"test-model","messages":[{"role":"assistant",'
+            b'"content":"","tool_calls":[{"id":"call_123","type":"function",'
+            b'"function":{"name":"search","arguments":"{\\"query\\":\\"hello\\"}"}}]},'
+            b'{"role":"tool","content":"result","tool_call_id":"call_123"}],'
+            b'"temperature":0.7,"max_tokens":1024}'
+        )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "done"}}]},
+        )
+
+    provider = create_provider(provider_config, handler)
+    try:
+        response = await provider.generate(
+            GenerationRequest(
+                messages=[
+                    Message(role="assistant", content="", tool_calls=(call,)),
+                    Message(
+                        role="tool",
+                        content="result",
+                        tool_call_id="call_123",
+                    ),
+                ]
+            )
+        )
+    finally:
+        await provider.close()
+
+    assert response == GenerationResponse(text="done")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "function",
+    [
+        {"name": "search", "arguments": "not-json"},
+        {"name": "search", "arguments": "[]"},
+        {"arguments": "{}"},
+    ],
+)
+async def test_generate_rejects_invalid_tool_calls(
+    provider_config: ProviderConfig,
+    function: dict[str, object],
+) -> None:
+    provider = create_provider(
+        provider_config,
+        lambda request: httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "tool call",
+                            "tool_calls": [{"id": "call_123", "function": function}],
+                        }
+                    }
+                ]
+            },
+            request=request,
+        ),
+    )
+    try:
+        with pytest.raises(ProviderError, match="invalid"):
+            await provider.generate(generation_request())
+    finally:
+        await provider.close()
 
 
 @pytest.mark.anyio

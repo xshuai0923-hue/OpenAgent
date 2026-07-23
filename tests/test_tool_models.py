@@ -79,9 +79,18 @@ def test_tool_call_defensively_copies_arguments() -> None:
     arguments["new"] = True
 
     assert call.tool_name == "  search  "
+    assert call.call_id == ""
     assert dict(call.arguments) == {"query": "original"}
     with pytest.raises(TypeError):
         call.arguments["query"] = "changed"  # type: ignore[index]
+
+
+def test_tool_call_preserves_custom_call_id() -> None:
+    call = ToolCall(tool_name="search", arguments={}, call_id="call_123")
+
+    assert call.call_id == "call_123"
+    with pytest.raises(FrozenInstanceError):
+        call.call_id = "changed"
 
 
 @pytest.mark.parametrize("tool_name", ["", "   "])
